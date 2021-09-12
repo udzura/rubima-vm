@@ -110,9 +110,8 @@ impl RubiMaVm {
                 self.push(target.into());
             }
             Goto => match &insn.opts[0] {
-                OptionValue::Goto(label) => {
-                    let label = label.clone();
-                    self.pc = label.0.borrow().pos;
+                OptionValue::Goto(pos) => {
+                    self.pc = *pos;
                     return Ok(());
                 }
                 _ => {
@@ -122,9 +121,8 @@ impl RubiMaVm {
             If => {
                 if self.pop()?.as_bool() {
                     match &insn.opts[0] {
-                        OptionValue::Goto(label) => {
-                            let label = label.clone();
-                            self.pc = label.0.borrow().pos;
+                        OptionValue::Goto(pos) => {
+                            self.pc = *pos;
                             return Ok(());
                         }
                         _ => {

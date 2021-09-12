@@ -1,7 +1,7 @@
 pub mod parser;
 pub mod vm;
 
-use std::{cell::RefCell, rc::Rc};
+// use std::{cell::RefCell, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub struct Insn {
@@ -57,27 +57,19 @@ impl Code {
 #[derive(Debug, Clone)]
 pub enum OptionValue {
     Integer(i32),
-    Goto(Label),
+    Goto(i32), // pos
 }
 
 #[derive(Debug, Clone)]
-pub struct LabelData {
+pub struct Label {
     pub name: String,
     pub pos: i32,
     pub id: u32,
 }
-#[derive(Debug)]
-pub struct Label(Rc<RefCell<LabelData>>);
 
 impl Label {
     pub fn new(name: String, id: u32) -> Self {
         let pos = -1;
-        Self(Rc::new(RefCell::new(LabelData { name, pos, id })))
-    }
-}
-
-impl Clone for Label {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self { name, pos, id }
     }
 }

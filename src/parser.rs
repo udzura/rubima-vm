@@ -4,12 +4,12 @@ use std::collections::HashMap;
 
 use regex::Regex;
 
-#[derive(Debug, Clone)]
-pub enum Token {
+#[derive(Debug)]
+pub enum Token<'a> {
     Cd(Code),
     Int(i32),
-    Lbl(Label),
-    Marker(Label),
+    Lbl(&'a str),
+    Marker(&'a str),
 }
 
 macro_rules! re {
@@ -21,25 +21,16 @@ macro_rules! re {
 #[derive(Debug, Clone)]
 pub struct Parser {
     pub insn: Vec<Insn>,
-    pub labels: HashMap<String, Label>,
-    pub current_label_id: u32,
 }
 
 impl Parser {
     pub fn new() -> Self {
-        Self {
-            insn: vec![],
-            labels: HashMap::new(),
-            current_label_id: 0,
-        }
-    }
-
-    fn get_label_id(&mut self) -> u32 {
-        self.current_label_id += 1;
-        self.current_label_id
+        Self { insn: vec![] }
     }
 
     pub fn parse(&mut self, prog: &str) -> Result<(), ParseError> {
+        let mut current_label_id: u32 = 0;
+        let mut labels: HashMap<String, Label> = HashMap::default();
         let mut pc = 0i32;
         for line in prog.lines().into_iter() {
             dbg!(line);
@@ -50,9 +41,10 @@ impl Parser {
             let matched = re.find(line);
             if let Some(m) = matched {
                 let name = m.as_str();
-                let label = Label::new(name.to_owned(), self.get_label_id());
-                self.labels.insert(name.to_owned(), label.clone());
-                tokens.push(Token::Marker(label.clone()));
+                current_label_id += 1;
+                let label = Label::new(name.to_owned(), current_label_id);
+                labels.insert(name.to_owned(), label.clone());
+                tokens.push(Token::Marker(name));
                 let len = line.len();
                 line = &line[len..len];
             }
@@ -62,16 +54,15 @@ impl Parser {
                 let matched = re.find(line);
                 if let Some(m) = matched {
                     let name = m.as_str();
-                    let label = self
-                        .labels
-                        .get(&name.to_string())
-                        .map(|l| l.clone())
-                        .unwrap_or_else(|| {
-                            let l = Label::new(name.to_owned(), self.get_label_id());
-                            self.labels.insert(name.to_owned(), l.clone());
-                            l
-                        });
-                    tokens.push(Token::Lbl(label.clone()));
+                    let name = if labels.contains_key(&name.to_string()) {
+                        name
+                    } else {
+                        current_label_id += 1;
+                        let l = Label::new(name.to_owned(), current_label_id);
+                        labels.insert(name.to_owned(), l.clone());
+                        name
+                    };
+                    tokens.push(Token::Lbl(name));
 
                     let end = line.len();
                     line = &line[m.end()..end];
@@ -123,21 +114,16 @@ impl Parser {
                 continue;
             }
 
-            match &tokens[0] {
-                Token::Marker(label) => {
-                    let l = label.clone();
-                    let mut val = l.0.borrow_mut();
-                    val.pos = pc;
-                }
-                Token::Cd(code) => {
-                    pc += 1;
-                    let opts = make_opts(&tokens[1..]);
-                    let insn = Insn::new(code.clone(), opts);
-                    self.insn.push(insn);
-                }
-                _ => {
-                    panic!("Invalid pattern");
-                }
+            if let Token::Marker(name) = tokens.get(0).unwrap() {
+                let mut label = labels.get_mut(*name).unwrap();
+                label.pos = pc;
+            }
+
+            if let Token::Cd(code) = tokens.get(0).unwrap() {
+                pc += 1;
+                let opts = make_opts(&tokens[1..], &labels);
+                let insn = Insn::new(code.clone(), opts);
+                self.insn.push(insn);
             }
         }
 
@@ -145,15 +131,16 @@ impl Parser {
     }
 }
 
-fn make_opts(tokens: &[Token]) -> Vec<OptionValue> {
+fn make_opts(tokens: &[Token], labels: &HashMap<String, Label>) -> Vec<OptionValue> {
     let mut ret = vec![];
     for token in tokens.iter() {
         match &token {
             &Token::Int(i) => {
                 ret.push(OptionValue::Integer(*i));
             }
-            &Token::Lbl(l) => {
-                ret.push(OptionValue::Goto(l.clone()));
+            &Token::Lbl(name) => {
+                let l = labels.get(*name).unwrap();
+                ret.push(OptionValue::Goto(l.pos));
             }
             _ => {
                 panic!("Invalid token: {:?}", token);
